@@ -26,6 +26,10 @@
 #define VDEC_IOCTL_CLOSE _IO(VDEC_IOCTL_MAGIC, 8)
 #define VDEC_IOCTL_FREEBUFFERS _IOW(VDEC_IOCTL_MAGIC, 9, struct vdec_buf_info)
 #define VDEC_IOCTL_GETDECATTRIBUTES _IOR(VDEC_IOCTL_MAGIC, 10,   struct vdec_dec_attributes)
+#define VDEC_IOCTL_GETVERSION _IOR(VDEC_IOCTL_MAGIC, 11, struct vdec_version)
+#define VDEC_IOCTL_SETPROPERTY _IOW(VDEC_IOCTL_MAGIC, 12, struct vdec_property_info)
+#define VDEC_IOCTL_GETPROPERTY _IOR(VDEC_IOCTL_MAGIC, 13, struct vdec_property_info)
+#define VDEC_IOCTL_PERFORMANCE_CHANGE_REQ _IOW(VDEC_IOCTL_MAGIC, 14, unsigned int)
 
 enum {
  VDEC_FRAME_DECODE_OK,
@@ -99,6 +103,7 @@ struct vdec_config {
  u32 h264_nal_len_size;
  u32 postproc_flag;
  u32 fruc_enable;
+ u32 color_format;
  u32 reserved;
 };
 
@@ -208,5 +213,47 @@ struct vdec_dec_attributes {
  struct vdec_buf_desc dec_req2;
 };
 
-#endif
+struct vdec_version {
+ u32 major;
+ u32 minor;
+};
 
+struct dal_vdec_rectangle {
+ u32 width;
+ u32 height;
+};
+
+struct stride_type {
+ u32 luma;
+ u32 chroma;
+};
+
+struct frame_alignment_type {
+ u32 luma_width;
+ u32 luma_height;
+ u32 chroma_width;
+ u32 chroma_height;
+ u32 chroma_offset;
+};
+
+union vdec_property {
+ u32 fourcc;
+ u32 profile;
+ u32 level;
+ struct dal_vdec_rectangle dim;
+ struct vdec_cropping_window cw;
+ struct vdec_buf_desc input_req;
+ struct vdec_buf_desc output_req;
+ struct stride_type stride;
+ u32 num_dal_ports;
+ u32 priority;
+ struct frame_alignment_type frame_alignment;
+ u32 def_type;
+};
+
+struct vdec_property_info {
+ enum vdec_property_id id;
+ union vdec_property property;
+};
+
+#endif
