@@ -62,6 +62,20 @@ enum {
  VDEC_QUEUE_BADSTATE,
 };
 
+enum vdec_property_id {
+ VDEC_FOURCC,
+ VDEC_PROFILE,
+ VDEC_LEVEL,
+ VDEC_DIMENSIONS,
+ VDEC_CWIN,
+ VDEC_INPUT_BUF_REQ,
+ VDEC_OUTPUT_BUF_REQ,
+ VDEC_LUMA_CHROMA_STRIDE,
+ VDEC_NUM_DAL_PORTS,
+ VDEC_PRIORITY,
+ VDEC_FRAME_ALIGNMENT
+};
+
 struct vdec_input_buf_info {
  u32 offset;
  u32 data;
