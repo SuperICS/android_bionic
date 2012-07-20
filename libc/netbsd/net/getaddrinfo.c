@@ -130,6 +130,9 @@ static const char in6_loopback[] = {
 };
 #endif
 
+// This should be synchronized to ResponseCode.h
+static const int DnsProxyQueryResult = 222;
+
 static const struct afd {
 	int a_af;
 	int a_addrlen;
@@ -408,7 +411,10 @@ android_getaddrinfo_proxy(
 {
 	int sock;
 	const int one = 1;
-	struct sockaddr_un proxy_addr;
+	union {
+		struct sockaddr_un un;
+		struct sockaddr generic;
+	} proxy_addr;
 	const char* cache_mode = getenv("ANDROID_DNS_MODE");
 	FILE* proxy = NULL;
 	int success = 0;
@@ -449,12 +455,12 @@ android_getaddrinfo_proxy(
 
 	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	memset(&proxy_addr, 0, sizeof(proxy_addr));
-	proxy_addr.sun_family = AF_UNIX;
-	strlcpy(proxy_addr.sun_path, "/dev/socket/dnsproxyd",
-		sizeof(proxy_addr.sun_path));
+	proxy_addr.un.sun_family = AF_UNIX;
+	strlcpy(proxy_addr.un.sun_path, "/dev/socket/dnsproxyd",
+		sizeof(proxy_addr.un.sun_path));
 	if (TEMP_FAILURE_RETRY(connect(sock,
-				       (const struct sockaddr*) &proxy_addr,
-				       sizeof(proxy_addr))) != 0) {
+				       &proxy_addr.generic,
+				       sizeof(proxy_addr.un))) != 0) {
 		close(sock);
 		return -1;
 	}
@@ -476,12 +482,15 @@ android_getaddrinfo_proxy(
 		goto exit;
 	}
 
-	int remote_rv;
-	if (fread(&remote_rv, sizeof(int), 1, proxy) != 1) {
+	char buf[4];
+	// read result code for gethostbyaddr
+	if (fread(buf, 1, sizeof(buf), proxy) != sizeof(buf)) {
 		goto exit;
 	}
 
-	if (remote_rv != 0) {
+	int result_code = (int)strtol(buf, NULL, 10);
+	// verify the code itself
+	if (result_code != DnsProxyQueryResult ) {
 		goto exit;
 	}
 
@@ -1541,7 +1550,7 @@ _get_scope(const struct sockaddr *addr)
 
 /* RFC 4380, section 2.6 */
 #define IN6_IS_ADDR_TEREDO(a)	 \
-	((*(const uint32_t *)(const void *)(&(a)->s6_addr[0]) == ntohl(0x20010000)))
+	(((a)->s6_addr32[0]) == ntohl(0x20010000))
 
 /* RFC 3056, section 2. */
 #define IN6_IS_ADDR_6TO4(a)	 \
@@ -1867,6 +1876,19 @@ error:
 	free(elems);
 }
 
+static int _using_alt_dns()
+{
+	char propname[PROP_NAME_MAX];
+	char propvalue[PROP_VALUE_MAX];
+
+	propvalue[0] = 0;
+	snprintf(propname, sizeof(propname), "net.dns1.%d", getpid());
+	if (__system_property_get(propname, propvalue) > 0 ) {
+		return 1;
+	}
+	return 0;
+}
+
 /*ARGSUSED*/
 static int
 _dns_getaddrinfo(void *rv, void	*cb_data, va_list ap)
@@ -1909,14 +1931,12 @@ _dns_getaddrinfo(void *rv, void	*cb_data, va_list ap)
 		q.anslen = sizeof(buf->buf);
 		int query_ipv6 = 1, query_ipv4 = 1;
 		if (pai->ai_flags & AI_ADDRCONFIG) {
-			query_ipv6 = _have_ipv6();
-			query_ipv4 = _have_ipv4();
-			if (query_ipv6 == 0 && query_ipv4 == 0) {
-				// Both our IPv4 and IPv6 connectivity probes failed, which indicates
-				// that we have neither an IPv4 or an IPv6 default route (and thus no
-				// global IPv4 or IPv6 connectivity). We might be in a walled garden.
-				// Throw up our arms and ask for both A and AAAA.
-				query_ipv6 = query_ipv4 = 1;
+			// Only implement AI_ADDRCONFIG if the application is not
+			// using its own DNS servers, since our implementation
+			// only works on the default connection.
+			if (!_using_alt_dns()) {
+				query_ipv6 = _have_ipv6();
+				query_ipv4 = _have_ipv4();
 			}
 		}
 		if (query_ipv6) {

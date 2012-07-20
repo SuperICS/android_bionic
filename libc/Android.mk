@@ -269,7 +269,6 @@ libc_common_src_files := \
 	bionic/libc_init_common.c \
 	bionic/logd_write.c \
 	bionic/md5.c \
-	bionic/memmove_words.c \
 	bionic/pututline.c \
 	bionic/realpath.c \
 	bionic/sched_getaffinity.c \
@@ -278,11 +277,14 @@ libc_common_src_files := \
 	bionic/sched_cpucount.c \
 	bionic/semaphore.c \
 	bionic/sha1.c \
-	bionic/ssp.c \
 	bionic/stubs.c \
 	bionic/system_properties.c \
+	bionic/tdelete.c \
+	bionic/tdestroy.c \
 	bionic/time64.c \
+	bionic/tfind.c \
 	bionic/thread_atexit.c \
+	bionic/tsearch.c \
 	bionic/utime.c \
 	bionic/utmp.c \
 	netbsd/gethnamaddr.c \
@@ -346,13 +348,16 @@ libc_common_src_files += \
 	arch-arm/bionic/__get_sp.S \
 	arch-arm/bionic/_exit_with_stack_teardown.S \
 	arch-arm/bionic/_setjmp.S \
-	arch-arm/bionic/atomics_arm.S \
+	arch-arm/bionic/abort_arm.S \
+	arch-arm/bionic/atomics_arm.c \
 	arch-arm/bionic/clone.S \
 	arch-arm/bionic/eabi.c \
 	arch-arm/bionic/ffs.S \
+	arch-arm/bionic/futex_arm.S \
 	arch-arm/bionic/kill.S \
 	arch-arm/bionic/libgcc_compat.c \
 	arch-arm/bionic/tkill.S \
+	arch-arm/bionic/tgkill.S \
 	arch-arm/bionic/memcmp.S \
 	arch-arm/bionic/memcmp16.S \
 	arch-arm/bionic/memcpy.S \
@@ -374,11 +379,18 @@ endif
 # current ARM version
 ifeq ($(TARGET_USE_SCORPION_BIONIC_OPTIMIZATION),true)
 libc_common_src_files += \
+	arch-arm/bionic/memmove.S \
+	bionic/memmove_words.c
+else
+ ifeq ($(TARGET_USE_KRAIT_BIONIC_OPTIMIZATION),true)
+ libc_common_src_files += \
 	arch-arm/bionic/memmove.S
-else # Non-Scorpion-based ARM
-libc_common_src_files += \
+ else # Other ARM
+ libc_common_src_files += \
 	string/bcopy.c \
-	string/memmove.c.arm
+	string/memmove.c.arm \
+	bionic/memmove_words.c
+ endif # !TARGET_USE_KRAIT_BIONIC_OPTIMIZATION
 endif # !TARGET_USE_SCORPION_BIONIC_OPTIMIZATION
 
 # These files need to be arm so that gdbserver
@@ -407,9 +419,9 @@ libc_common_src_files += \
 	arch-x86/bionic/__get_sp.S \
 	arch-x86/bionic/__get_tls.c \
 	arch-x86/bionic/__set_tls.c \
-	arch-x86/bionic/atomics_x86.S \
 	arch-x86/bionic/clone.S \
 	arch-x86/bionic/_exit_with_stack_teardown.S \
+	arch-x86/bionic/futex_x86.S \
 	arch-x86/bionic/setjmp.S \
 	arch-x86/bionic/_setjmp.S \
 	arch-x86/bionic/sigsetjmp.S \
@@ -439,43 +451,6 @@ libc_arch_static_src_files := \
 
 libc_arch_dynamic_src_files :=
 else # !x86
-
-ifeq ($(TARGET_ARCH),sh)
-libc_common_src_files += \
-	arch-sh/bionic/__get_pc.S \
-	arch-sh/bionic/__get_sp.S \
-	arch-sh/bionic/_exit_with_stack_teardown.S \
-	arch-sh/bionic/_setjmp.S \
-	arch-sh/bionic/atomics_sh.c \
-	arch-sh/bionic/atomic_cmpxchg.S \
-	arch-sh/bionic/clone.S \
-	arch-sh/bionic/pipe.S \
-	arch-sh/bionic/memcpy.S \
-	arch-sh/bionic/memset.S \
-	arch-sh/bionic/bzero.S \
-	arch-sh/bionic/setjmp.S \
-	arch-sh/bionic/sigsetjmp.S \
-	arch-sh/bionic/syscall.S \
-	arch-sh/bionic/memmove.S \
-	arch-sh/bionic/__set_tls.c \
-	arch-sh/bionic/__get_tls.c \
-	arch-sh/bionic/ffs.S \
-	string/bcopy.c \
-	string/strcmp.c \
-	string/strncmp.c \
-	string/memcmp.c \
-	string/strlen.c \
-	string/strcpy.c \
-	bionic/pthread-atfork.c \
-	bionic/pthread-rwlocks.c \
-	bionic/pthread-timers.c \
-	bionic/ptrace.c \
-	unistd/socketcalls.c
-
-libc_static_common_src_files += \
-        bionic/pthread.c \
-
-endif # sh
 
 endif # !x86
 endif # !arm
@@ -525,9 +500,8 @@ ifeq ($(TARGET_ARCH),arm)
   ifeq ($(ARCH_ARM_HAVE_TLS_REGISTER),true)
     libc_common_cflags += -DHAVE_ARM_TLS_REGISTER
   endif
-
-  ifeq ($(TARGET_HAVE_TEGRA_ERRATA_657451),true)
-    libc_common_cflags += -DHAVE_TEGRA_ERRATA_657451
+  ifeq ($(ARCH_ARM_USE_NON_NEON_MEMCPY),true)
+    libc_common_cflags += -DARCH_ARM_USE_NON_NEON_MEMCPY
   endif
   # Add in defines to activate SCORPION_NEON_OPTIMIZATION
   ifeq ($(TARGET_USE_SCORPION_BIONIC_OPTIMIZATION),true)
@@ -537,13 +511,32 @@ ifeq ($(TARGET_ARCH),arm)
       libc_common_cflags += -DPLDSIZE=$(TARGET_SCORPION_BIONIC_PLDSIZE)
     endif
   endif
+  ifeq ($(TARGET_HAVE_TEGRA_ERRATA_657451),true)
+    libc_common_cflags += -DHAVE_TEGRA_ERRATA_657451
+  endif
+  # Add in defines to activate KRAIT_NEON_OPTIMIZATION
+  ifeq ($(TARGET_USE_KRAIT_BIONIC_OPTIMIZATION),true)
+    libc_common_cflags += -DKRAIT_NEON_OPTIMIZATION
+    ifeq ($(TARGET_USE_KRAIT_PLD_SET),true)
+      libc_common_cflags += -DPLDOFFS=$(TARGET_KRAIT_BIONIC_PLDOFFS)
+      libc_common_cflags += -DPLDTHRESH=$(TARGET_KRAIT_BIONIC_PLDTHRESH)
+      libc_common_cflags += -DPLDSIZE=$(TARGET_KRAIT_BIONIC_PLDSIZE)
+      libc_common_cflags += -DBBTHRESH=$(TARGET_KRAIT_BIONIC_BBTHRESH)
+    endif
+  endif
+>>>>>>> cm/jellybean
   ifeq ($(TARGET_CORTEX_CACHE_LINE_32),true)
     libc_common_cflags += -DCORTEX_CACHE_LINE_32
   endif
 else # !arm
   ifeq ($(TARGET_ARCH),x86)
     libc_crt_target_cflags :=
-    # TARGET_GLOBAL_CFLAGS from build/core/combo/TARGET_linux-x86.mk sets all required flags.
+    ifeq ($(ARCH_X86_HAVE_SSE2),true)
+        libc_crt_target_cflags += -DUSE_SSE2=1
+    endif
+    ifeq ($(ARCH_X86_HAVE_SSSE3),true)
+        libc_crt_target_cflags += -DUSE_SSSE3=1
+    endif
   endif # x86
 endif # !arm
 
@@ -576,8 +569,9 @@ libc_common_c_includes := \
 
 # Needed to access private/__dso_handle.S from
 # crtbegin_xxx.S and crtend_xxx.S
+# and machine/asm.h
 #
-libc_crt_target_cflags += -I$(LOCAL_PATH)/private
+libc_crt_target_cflags += -I$(LOCAL_PATH)/private -I$(LOCAL_PATH)/arch-$(TARGET_ARCH)/include
 
 # Define the libc run-time (crt) support object files that must be built,
 # which are needed to build all other objects (shared/static libs and
@@ -642,6 +636,25 @@ ALL_GENERATED_SOURCES += $(GEN)
 WITH_MALLOC_CHECK_LIBC_A := $(strip $(WITH_MALLOC_CHECK_LIBC_A))
 
 # ========================================================
+# libbionic_ssp.a - stack protector code
+# ========================================================
+#
+# The stack protector code needs to be compiled
+# with -fno-stack-protector, since it modifies the
+# stack canary.
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := bionic/ssp.c
+LOCAL_CFLAGS := $(libc_common_cflags) -fno-stack-protector
+LOCAL_C_INCLUDES := $(libc_common_c_includes)
+LOCAL_MODULE := libbionic_ssp
+LOCAL_SYSTEM_SHARED_LIBRARIES :=
+
+include $(BUILD_STATIC_LIBRARY)
+
+
+# ========================================================
 # libc_common.a
 # ========================================================
 include $(CLEAR_VARS)
@@ -653,6 +666,7 @@ LOCAL_CFLAGS += -DCRT_LEGACY_WORKAROUND
 endif
 LOCAL_C_INCLUDES := $(libc_common_c_includes)
 LOCAL_MODULE := libc_common
+LOCAL_WHOLE_STATIC_LIBRARIES := libbionic_ssp
 LOCAL_SYSTEM_SHARED_LIBRARIES :=
 
 include $(BUILD_STATIC_LIBRARY)
@@ -713,7 +727,19 @@ include $(BUILD_STATIC_LIBRARY)
 # ========================================================
 include $(CLEAR_VARS)
 
-LOCAL_CFLAGS := $(libc_common_cflags)
+# pthread deadlock prediction:
+# set -DPTHREAD_DEBUG -DPTHREAD_DEBUG_ENABLED=1 to enable support for
+# pthread deadlock prediction.
+# Since this code is experimental it is disabled by default.
+# see libc/bionic/pthread_debug.c for details
+
+LOCAL_CFLAGS := $(libc_common_cflags) -DPTHREAD_DEBUG -DPTHREAD_DEBUG_ENABLED=0
+
+ifeq ($(TARGET_ARCH),arm)
+# TODO: At some point, we need to remove this custom linker script.
+LOCAL_LDFLAGS := -Wl,-T,$(BUILD_SYSTEM)/armelf.xsc
+endif
+
 LOCAL_C_INCLUDES := $(libc_common_c_includes)
 
 LOCAL_SRC_FILES := \
@@ -721,6 +747,7 @@ LOCAL_SRC_FILES := \
 	$(libc_static_common_src_files) \
 	bionic/dlmalloc.c \
 	bionic/malloc_debug_common.c \
+	bionic/pthread_debug.c \
 	bionic/libc_init_dynamic.c
 
 LOCAL_MODULE:= libc
@@ -760,7 +787,10 @@ LOCAL_CFLAGS := \
 LOCAL_C_INCLUDES := $(libc_common_c_includes)
 
 LOCAL_SRC_FILES := \
-	bionic/malloc_debug_leak.c
+	bionic/malloc_debug_leak.c \
+	bionic/malloc_debug_check.c \
+	bionic/malloc_debug_check_mapinfo.c \
+	bionic/malloc_debug_stacktrace.c
 
 LOCAL_MODULE:= libc_malloc_debug_leak
 
@@ -791,7 +821,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_MODULE:= libc_malloc_debug_qemu
 
-LOCAL_SHARED_LIBRARIES := libc
+LOCAL_SHARED_LIBRARIES := libc libdl
 LOCAL_WHOLE_STATIC_LIBRARIES := libc_common
 LOCAL_SYSTEM_SHARED_LIBRARIES :=
 
