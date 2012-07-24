@@ -524,7 +524,6 @@ ifeq ($(TARGET_ARCH),arm)
       libc_common_cflags += -DBBTHRESH=$(TARGET_KRAIT_BIONIC_BBTHRESH)
     endif
   endif
->>>>>>> cm/jellybean
   ifeq ($(TARGET_CORTEX_CACHE_LINE_32),true)
     libc_common_cflags += -DCORTEX_CACHE_LINE_32
   endif
