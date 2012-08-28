@@ -108,7 +108,10 @@ static const char *ldpreload_names[LDPRELOAD_MAX + 1];
 
 static soinfo *preloads[LDPRELOAD_MAX + 1];
 
+#if LINKER_DEBUG
 int debug_verbosity;
+#endif
+
 static int pid;
 
 /* This boolean is set if the program being loaded is setuid */
@@ -908,10 +911,10 @@ load_segments(int fd, void *header, soinfo *si)
 {
     Elf32_Ehdr *ehdr = (Elf32_Ehdr *)header;
     Elf32_Phdr *phdr = (Elf32_Phdr *)((unsigned char *)header + ehdr->e_phoff);
-    unsigned char *base = (unsigned char *)si->base;
+    Elf32_Addr base = (Elf32_Addr) si->base;
     int cnt;
     unsigned len;
-    unsigned char *tmp;
+    Elf32_Addr tmp;
     unsigned char *pbase;
     unsigned char *extra_base;
     unsigned extra_len;
@@ -935,7 +938,7 @@ load_segments(int fd, void *header, soinfo *si)
             TRACE("[ %d - Trying to load segment from '%s' @ 0x%08x "
                   "(0x%08x). p_vaddr=0x%08x p_offset=0x%08x ]\n", pid, si->name,
                   (unsigned)tmp, len, phdr->p_vaddr, phdr->p_offset);
-            pbase = mmap(tmp, len, PFLAGS_TO_PROT(phdr->p_flags),
+            pbase = mmap((void *)tmp, len, PFLAGS_TO_PROT(phdr->p_flags),
                          MAP_PRIVATE | MAP_FIXED, fd,
                          phdr->p_offset & (~PAGE_MASK));
             if (pbase == MAP_FAILED) {
@@ -977,7 +980,7 @@ load_segments(int fd, void *header, soinfo *si)
              *                  |                     |
              *                 _+---------------------+  page boundary
              */
-            tmp = (unsigned char *)(((unsigned)pbase + len + PAGE_SIZE - 1) &
+            tmp = (Elf32_Addr)(((unsigned)pbase + len + PAGE_SIZE - 1) &
                                     (~PAGE_MASK));
             if (tmp < (base + phdr->p_vaddr + phdr->p_memsz)) {
                 extra_len = base + phdr->p_vaddr + phdr->p_memsz - tmp;
@@ -1650,7 +1653,6 @@ static void call_constructors(soinfo *si)
     }
 }
 
-
 static void call_destructors(soinfo *si)
 {
     if (si->fini_array) {
@@ -1969,7 +1971,7 @@ static int link_image(soinfo *si, unsigned wr_offset)
                of the DT_NEEDED entry itself, so that we can retrieve the
                soinfo directly later from the dynamic segment.  This is a hack,
                but it allows us to map from DT_NEEDED to soinfo efficiently
-               later on when we resolve relocations, trying to look up a symgol
+               later on when we resolve relocations, trying to look up a symbol
                with dlsym().
             */
             d[1] = (unsigned)lsi;
@@ -2152,10 +2154,12 @@ unsigned __linker_init(unsigned **elfdata)
 
     /* Get a few environment variables */
     {
+#if LINKER_DEBUG
         const char* env;
         env = linker_env_get("DEBUG"); /* XXX: TODO: Change to LD_DEBUG */
         if (env)
             debug_verbosity = atoi(env);
+#endif
 
         /* Normally, these are cleaned by linker_env_secure, but the test
          * against program_is_setuid doesn't cost us anything */

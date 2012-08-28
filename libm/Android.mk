@@ -152,7 +152,6 @@ libm_common_src_files:= \
 	src/s_isnan.c \
 	src/s_modf.c
 
-
 ifeq ($(TARGET_ARCH),arm)
   libm_common_src_files += \
 	arm/fenv.c \
@@ -160,6 +159,18 @@ ifeq ($(TARGET_ARCH),arm)
 	src/s_scalbln.c \
 	src/s_scalbn.c \
 	src/s_scalbnf.c
+
+  ifeq ($(TARGET_USE_KRAIT_BIONIC_OPTIMIZATION),true)
+    libm_common_src_files += \
+	  arm/e_pow.S
+    libm_common_cflags += -DKRAIT_NEON_OPTIMIZATION
+  endif
+
+  ifeq ($(TARGET_USE_SPARROW_BIONIC_OPTIMIZATION),true)
+    libm_common_src_files += \
+	  arm/e_pow.S
+    libm_common_cflags += -DSPARROW_NEON_OPTIMIZATION
+  endif
 
   libm_common_includes = $(LOCAL_PATH)/arm
 
