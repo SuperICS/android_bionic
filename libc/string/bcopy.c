@@ -74,7 +74,9 @@ bcopy(const void *src0, void *dst0, size_t length)
 #define	TLOOP1(s) do { s; } while (--t)
 
 	if ((unsigned long)dst < (unsigned long)src) {
-	#if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
+    #if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
+        memcpy(dst, src, length);
+	#else
 		/*
 		 * Copy forward.
 		 */
@@ -98,32 +100,9 @@ bcopy(const void *src0, void *dst0, size_t length)
 		TLOOP(*(word *)dst = *(word *)src; src += wsize; dst += wsize);
 		t = length & wmask;
 		TLOOP(*dst++ = *src++);
-    #else
-        memcpy(dst, src, length);
     #endif
 	} else {
-    #if !(defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY))
-		/*
-		 * Copy backwards.  Otherwise essentially the same.
-		 * Alignment works as before, except that it takes
-		 * (t&wmask) bytes to align, not wsize-(t&wmask).
-		 */
-		src += length;
-		dst += length;
-		t = (long)src;
-		if ((t | (long)dst) & wmask) {
-			if ((t ^ (long)dst) & wmask || length <= wsize)
-				t = length;
-			else
-				t &= wmask;
-			length -= t;
-			TLOOP1(*--dst = *--src);
-		}
-		t = length / wsize;
-		TLOOP(src -= wsize; dst -= wsize; *(word *)dst = *(word *)src);
-		t = length & wmask;
-		TLOOP(*--dst = *--src);
-    #else
+    #if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
         src += length;
         dst += length;
         if (!(((unsigned long)dst ^ (unsigned long)src) & 0x03)) {
@@ -284,6 +263,27 @@ bcopy(const void *src0, void *dst0, size_t length)
                 : "memory", "cc", "r12"
             ); 
         }
+	#else
+		/*
+		 * Copy backwards.  Otherwise essentially the same.
+		 * Alignment works as before, except that it takes
+		 * (t&wmask) bytes to align, not wsize-(t&wmask).
+		 */
+		src += length;
+		dst += length;
+		t = (long)src;
+		if ((t | (long)dst) & wmask) {
+			if ((t ^ (long)dst) & wmask || length <= wsize)
+				t = length;
+			else
+				t &= wmask;
+			length -= t;
+			TLOOP1(*--dst = *--src);
+		}
+		t = length / wsize;
+		TLOOP(src -= wsize; dst -= wsize; *(word *)dst = *(word *)src);
+		t = length & wmask;
+		TLOOP(*--dst = *--src);
     #endif
 	}
 done:

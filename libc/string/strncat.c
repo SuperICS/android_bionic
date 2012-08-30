@@ -44,11 +44,11 @@ strncat(char *dst, const char *src, size_t n)
 		char *d = dst;
 		const char *s = src;
 
-    #if !(defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY))
+    #if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
+        d += strlen(d);
+    #else
 		while (*d != 0)
 			d++;
-    #else
-        d += strlen(d);
     #endif
 		do {
 			if ((*d = *s++) == 0)
